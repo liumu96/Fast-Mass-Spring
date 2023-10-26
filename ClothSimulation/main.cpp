@@ -1,8 +1,10 @@
 // #include <GL/glew.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-
 #include <iostream>
+
+#include "Shader.h"
+#include "Renderer.h"
 
 // GLOBALS
 
@@ -20,6 +22,9 @@ bool firstMouse = true;
 // state initialization
 static void initGlfwState();
 static void initGLState();
+
+// draw cloth function
+static void drawCloth();
 
 // glfw callbacks
 static void framebuffer_size_callback(GLFWwindow *window, int width, int height);
@@ -85,6 +90,7 @@ static void initGlfwState()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // also clear the depth buffer now!
 
         // todo -> cloth simulation
+        drawCloth();
 
         // glfw: swap buffers and poll IO events (keys pressed / released, mouse moved etc.)
         glfwSwapBuffers(window);
@@ -154,6 +160,13 @@ static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
     g_windowWidth = width;
     g_windowHeight = height;
     glViewport(0, 0, width, height);
+}
+
+// CLOTH
+static void drawCloth()
+{
+    // todo render
+    Renderer renderer;
 }
 
 // ERRORS
