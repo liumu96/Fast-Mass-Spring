@@ -1,5 +1,6 @@
 #include "Renderer.h"
 #include <glm/gtc/type_ptr.hpp>
+#include <iostream>
 
 Renderer::Renderer() {}
 

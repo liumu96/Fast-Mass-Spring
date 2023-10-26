@@ -4,7 +4,7 @@
 
 class Renderer
 {
-protected:
+public:
     GLProgram *program;
     ProgramInput *input;
     unsigned int n_elements;

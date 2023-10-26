@@ -5,6 +5,9 @@
 
 #include "Shader.h"
 #include "Renderer.h"
+#include "Mesh.h"
+#include "MassSpringSolver.h"
+#include "UserInteraction.h"
 
 // GLOBALS
 
@@ -19,6 +22,13 @@ static float g_mouseClickY;
 
 bool firstMouse = true;
 
+// User Interaction
+static UserInteraction *UI;
+static Renderer *g_pickRenderer;
+
+// Constants
+static const float PI = glm::pi<float>();
+
 // Shader Handles
 static PhongShader *g_phongShader; // linked phong shader
 static PickShader *g_pickShader;   // linked pick shader
@@ -28,8 +38,41 @@ static const glm::vec3 g_albedo(0.0f, 0.3f, 0.7f);
 static const glm::vec3 g_ambient(0.01f, 0.01f, 0.01f);
 static const glm::vec3 g_light(1.0f, 1.0f, -1.0f);
 
+// Mesh
+static Mesh *g_clothMesh; // halfedge data structure
+
 // Render Target
+static Renderer renderer;
 static ProgramInput *g_render_target; // vertex, normal, texture, index
+
+// Animation
+static const int g_fps = 60;        // frames per second  | 60
+static const int g_iter = 5;        // iterations per time step | 10
+static const int g_frame_time = 15; // approximate time for frame calculations | 15
+static const int g_animation_timer = (int)((1.0f / g_fps) * 1000 - g_frame_time);
+
+// Mass Spring System
+static mass_spring_system *g_system;
+static MassSpringSolver *g_solver;
+
+// System parameters
+namespace SystemParam
+{
+    static const int n = 33;                    // must be odd, n * n = n_vertices | 61
+    static const float w = 2.0f;                // width | 2.0f
+    static const float h = 0.008f;              // time step, smaller for better results | 0.008f = 0.016f/2
+    static const float r = w / (n - 1) * 1.05f; // spring rest length
+    static const float k = 1.0f;                // spring stiffness | 1.0f
+    static const float m = 0.25f / (n * n);     // pint mass | 0.25f
+    static const float a = 0.993f;              // damping, clost to 1.0 | 0.993f
+    static const float g = 9.8f * m;            // gravitational force | 9.8f
+}
+
+// Constraint Graph
+static CgRootNode *g_cgRootNode;
+
+// Scene parameters
+static const float g_camera_distance = 4.2f;
 
 // Scene matrices
 static glm::mat4 g_ModelViewMatrix;
@@ -42,9 +85,22 @@ static void initGLState();
 static void display();
 
 static void initShaders(); // Read, compile and link shaders
+static void initCloth();   // Generate cloth mesh
+static void initScene();   // Generate scene matrices
+static void initRenderer();
+// demos
+static void demo_hang(); // curtain hanging from top corners
+static void demo_drop(); // curtain dropping on sphere
+// static void (*g_demo)() = demo_drop;
+static void (*g_demo)() = demo_hang;
 
 // draw cloth function
 static void drawCloth();
+static void animateCloth();
+
+// scene update
+static void updateProjection();
+static void updateRenderTarget();
 
 // glfw callbacks
 static void framebuffer_size_callback(GLFWwindow *window, int width, int height);
@@ -61,7 +117,11 @@ int main()
         initGlfwState();
         initGLState();
         initShaders();
+        initCloth();
+        initScene();
+        initRenderer();
         display();
+
         return 0;
     }
     catch (const std::runtime_error &e)
@@ -138,6 +198,166 @@ static void initShaders()
     checkGlErrors();
 }
 
+static void initCloth()
+{
+    // short hand
+    const int n = SystemParam::n;
+    const float w = SystemParam::w;
+
+    // generate mesh
+    MeshBuilder meshBuilder;
+    meshBuilder.uniformGrid(w, n);
+    g_clothMesh = meshBuilder.getResult();
+
+    // fill program input
+    g_render_target = new ProgramInput;
+    g_render_target->setPositionData(g_clothMesh->vbuff(), g_clothMesh->vbuffLen());
+    g_render_target->setNormalData(g_clothMesh->nbuff(), g_clothMesh->nbuffLen());
+    g_render_target->setTextureDate(g_clothMesh->tbuff(), g_clothMesh->tbuffLen());
+    g_render_target->setIndexData(g_clothMesh->ibuff(), g_clothMesh->ibuffLen());
+
+    checkGlErrors();
+
+    g_demo();
+}
+
+static void initScene()
+{
+    g_ModelViewMatrix = glm::lookAt(
+                            glm::vec3(0.618, -0.786, 0.3f) * g_camera_distance,
+                            glm::vec3(0.0f, 0.0f, -1.0f),
+                            glm::vec3(0.0f, 0.0f, 1.0f)) *
+                        glm::translate(glm::mat4(1), glm::vec3(0.0f, 0.0f, SystemParam::w / 4));
+    updateProjection();
+}
+
+static void initRenderer()
+{
+    renderer.setProgram(g_phongShader);
+    renderer.setModelview(g_ModelViewMatrix);
+    renderer.setProjection(g_ProjectionMatrix);
+    g_phongShader->setAlbedo(g_albedo);
+    g_phongShader->setAmbient(g_ambient);
+    g_phongShader->setLight(g_light);
+    renderer.setProgramInput(g_render_target);
+    renderer.setElementCount(g_clothMesh->ibuffLen());
+}
+
+static void demo_hang()
+{
+    // short hand
+    const int n = SystemParam::n;
+
+    // initializa mass spring system
+    MassSpringBuilder massSpringBuilder;
+    massSpringBuilder.uniformGrid(
+        SystemParam::n,
+        SystemParam::h,
+        SystemParam::r,
+        SystemParam::k,
+        SystemParam::m,
+        SystemParam::a,
+        SystemParam::g);
+    g_system = massSpringBuilder.getResult();
+
+    // initialize mass spring solver
+    g_solver = new MassSpringSolver(g_system, g_clothMesh->vbuff());
+
+    // deformation constraint parameters
+    const float tauc = 0.4f;            // critical spring deformation | 0.4f
+    const unsigned int deformIter = 15; // number of iterations | 15
+
+    // initialize constraints
+    // spring deformation constraint
+    CgSpringDeformationNode *deformationNode =
+        new CgSpringDeformationNode(g_system, g_clothMesh->vbuff(), tauc, deformIter);
+    deformationNode->addSprings(massSpringBuilder.getShearIndex());
+    deformationNode->addSprings(massSpringBuilder.getStructIndex());
+
+    // fix top corners
+    CgPointFixNode *cornerFixer = new CgPointFixNode(g_system, g_clothMesh->vbuff());
+    cornerFixer->fixPoint(0);
+    cornerFixer->fixPoint(n - 1);
+
+    // initialize user interaction
+    g_pickRenderer = new Renderer();
+    g_pickRenderer->setProgram(g_pickShader);
+    g_pickRenderer->setProgramInput(g_render_target);
+    g_pickRenderer->setElementCount(g_clothMesh->ibuffLen());
+    g_pickShader->setTessFact(SystemParam::n);
+    CgPointFixNode *mouseFixer = new CgPointFixNode(g_system, g_clothMesh->vbuff());
+    UI = new GridMeshUI(g_pickRenderer, mouseFixer, g_clothMesh->vbuff(), n);
+
+    // build constraint graph
+    g_cgRootNode = new CgRootNode(g_system, g_clothMesh->vbuff());
+
+    // first layer
+    g_cgRootNode->addChild(deformationNode);
+
+    // second layer
+    deformationNode->addChild(cornerFixer);
+    deformationNode->addChild(mouseFixer);
+}
+
+static void demo_drop()
+{
+    // short hand
+    const int n = SystemParam::n;
+
+    // initializa mass spring systems
+    MassSpringBuilder massSpringBuilder;
+    massSpringBuilder.uniformGrid(
+        SystemParam::n,
+        SystemParam::h,
+        SystemParam::r,
+        SystemParam::k,
+        SystemParam::m,
+        SystemParam::a,
+        SystemParam::g);
+    g_system = massSpringBuilder.getResult();
+
+    // initialize mass spring solver
+    g_solver = new MassSpringSolver(g_system, g_clothMesh->vbuff());
+
+    // sphere collision constraint parameters
+    const float radius = 0.64f;             // sphere radius | 0.64f
+    const Eigen::Vector3f center(0, 0, -1); // sphere center | (0, 0, -1)
+
+    // deformation constraint parameters
+    const float tauc = 0.12f;           // critical spring deformation | 0.12f
+    const unsigned int deformIter = 15; // number of iterations | 15
+
+    // initialize constraints
+    // sphere collision constraint
+    CgSphereCollisionNode *sphereCollisionNode =
+        new CgSphereCollisionNode(g_system, g_clothMesh->vbuff(), radius, center);
+
+    // spring deformation constraint
+    CgSpringDeformationNode *deformationNode =
+        new CgSpringDeformationNode(g_system, g_clothMesh->vbuff(), tauc, deformIter);
+    deformationNode->addSprings(massSpringBuilder.getShearIndex());
+    deformationNode->addSprings(massSpringBuilder.getStructIndex());
+
+    // initialize user interaction
+    g_pickRenderer = new Renderer();
+    g_pickRenderer->setProgram(g_pickShader);
+    g_pickRenderer->setProgramInput(g_render_target);
+    g_pickRenderer->setElementCount(g_clothMesh->ibuffLen());
+    g_pickShader->setTessFact(SystemParam::n);
+    CgPointFixNode *mouseFixer = new CgPointFixNode(g_system, g_clothMesh->vbuff());
+    UI = new GridMeshUI(g_pickRenderer, mouseFixer, g_clothMesh->vbuff(), n);
+
+    // build constraint graph
+    g_cgRootNode = new CgRootNode(g_system, g_clothMesh->vbuff());
+
+    // first layer
+    g_cgRootNode->addChild(deformationNode);
+    g_cgRootNode->addChild(sphereCollisionNode);
+
+    // second layer
+    deformationNode->addChild(mouseFixer);
+}
+
 // GLFW Callbacks
 static void display()
 {
@@ -151,7 +371,8 @@ static void display()
         glClearColor(0.25f, 0.25f, 0.25f, 0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // also clear the depth buffer now!
 
-        // todo -> cloth simulation
+        // cloth simulation
+        animateCloth();
         drawCloth();
 
         // glfw: swap buffers and poll IO events (keys pressed / released, mouse moved etc.)
@@ -185,9 +406,21 @@ static void mouse_callback(GLFWwindow *window, double xposIn, double yposIn)
     const float xoffset = xpos - g_mouseClickX;
     const float yoffset = g_mouseClickY - ypos; // reversed since y-coordinates go from bottom to top
 
+    std::cout << g_mouseClickDown << std::endl;
     if (g_mouseClickDown)
     {
         // todo more user interaction
+        UI->setModelview(g_ModelViewMatrix);
+        UI->setProjection(g_ProjectionMatrix);
+        UI->grabPoint(g_mouseClickX, g_mouseClickY);
+        glm::vec3 ux(0, 1, 0);
+        glm::vec3 uy(0, 0, -1);
+        UI->movePoint(0.01f * (xoffset * ux + yoffset * uy));
+        std::cout << "test" << std::endl;
+    }
+    else
+    {
+        UI->releasePoint();
     }
 
     g_mouseClickX = xpos;
@@ -212,8 +445,43 @@ static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 // CLOTH
 static void drawCloth()
 {
-    // todo render
-    Renderer renderer;
+    // render
+    renderer.draw();
+}
+
+static void animateCloth()
+{
+    // solve two time-steps
+    g_solver->solve(g_iter);
+    g_solver->solve(g_iter);
+
+    // fix points
+    CgSatisfyVisitor visitor;
+    visitor.satisfy(*g_cgRootNode);
+
+    // update normals
+    g_clothMesh->request_face_normals();
+    g_clothMesh->update_normals();
+    g_clothMesh->release_face_normals();
+
+    // update target
+    updateRenderTarget();
+}
+
+// SCENE UPDATE
+static void updateProjection()
+{
+    g_ProjectionMatrix = glm::perspective(PI / 4.0f,
+                                          g_windowWidth * 1.0f / g_windowHeight, 0.01f, 1000.0f);
+}
+
+static void updateRenderTarget()
+{
+    // update vertex positions
+    g_render_target->setPositionData(g_clothMesh->vbuff(), g_clothMesh->vbuffLen());
+
+    // update vertex normals
+    g_render_target->setNormalData(g_clothMesh->nbuff(), g_clothMesh->vbuffLen());
 }
 
 // ERRORS

@@ -15,11 +15,11 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(Sources 
     ClothSimulation/main.cpp
-    # ClothSimulation/MassSpringSolver.cpp
-    # ClothSimulation/Mesh.cpp
+    ClothSimulation/MassSpringSolver.cpp
+    ClothSimulation/Mesh.cpp
     ClothSimulation/Renderer.cpp
     ClothSimulation/Shader.cpp
-    # ClothSimulation/UserInteraction.cpp
+    ClothSimulation/UserInteraction.cpp
 )
 
 INCLUDE_DIRECTORIES(/System/Library/Frameworks)
