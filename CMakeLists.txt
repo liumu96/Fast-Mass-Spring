@@ -49,6 +49,9 @@ include_directories( /opt/homebrew/include)
 #     eigen3
 #     )
 
+# copy shaders to binary directory
+file(INSTALL ClothSimulation/shaders/ DESTINATION shaders/)
+
 add_executable(fast-mass-spring ${Sources})
 
 add_library(GLAD "ClothSimulation/glad.c")
