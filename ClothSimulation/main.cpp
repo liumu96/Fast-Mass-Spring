@@ -406,7 +406,6 @@ static void mouse_callback(GLFWwindow *window, double xposIn, double yposIn)
     const float xoffset = xpos - g_mouseClickX;
     const float yoffset = g_mouseClickY - ypos; // reversed since y-coordinates go from bottom to top
 
-    std::cout << g_mouseClickDown << std::endl;
     if (g_mouseClickDown)
     {
         // todo more user interaction
@@ -416,7 +415,6 @@ static void mouse_callback(GLFWwindow *window, double xposIn, double yposIn)
         glm::vec3 ux(0, 1, 0);
         glm::vec3 uy(0, 0, -1);
         UI->movePoint(0.01f * (xoffset * ux + yoffset * uy));
-        std::cout << "test" << std::endl;
     }
     else
     {
