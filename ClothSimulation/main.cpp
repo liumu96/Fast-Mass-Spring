@@ -21,6 +21,7 @@ static float g_mouseClickX;
 static float g_mouseClickY;
 
 bool firstMouse = true;
+bool launced = false;
 
 // User Interaction
 static UserInteraction *UI;
@@ -91,8 +92,8 @@ static void initRenderer();
 // demos
 static void demo_hang(); // curtain hanging from top corners
 static void demo_drop(); // curtain dropping on sphere
-// static void (*g_demo)() = demo_drop;
-static void (*g_demo)() = demo_hang;
+static void (*g_demo)() = demo_drop;
+// static void (*g_demo)() = demo_hang;
 
 // draw cloth function
 static void drawCloth();
@@ -431,6 +432,10 @@ static void processInput(GLFWwindow *window)
     {
         glfwSetWindowShouldClose(window, true);
     }
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    {
+        launced = true;
+    }
 }
 
 static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
@@ -449,6 +454,8 @@ static void drawCloth()
 
 static void animateCloth()
 {
+    if (!launced)
+        return;
     // solve two time-steps
     g_solver->solve(g_iter);
     g_solver->solve(g_iter);
