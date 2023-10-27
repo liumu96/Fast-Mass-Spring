@@ -44,7 +44,10 @@ void UserInteraction::movePoint(vec3 v)
         return;
     fixer->releasePoint(i);
     for (int j = 0; j < 3; j++)
+    {
         vbuff[3 * i + j] += v[j];
+    }
+
     fixer->fixPoint(i);
 }
 

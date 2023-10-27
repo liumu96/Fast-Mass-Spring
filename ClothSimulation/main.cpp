@@ -396,33 +396,33 @@ static void mouse_callback(GLFWwindow *window, double xposIn, double yposIn)
     int xpos = static_cast<float>(xposIn);
     int ypos = static_cast<float>(yposIn);
 
-    if (firstMouse)
+    if (firstMouse && g_mouseClickDown)
     {
+        // mouse press
         g_mouseClickX = xpos;
         g_mouseClickY = ypos;
         firstMouse = false;
-    }
-
-    const float xoffset = xpos - g_mouseClickX;
-    const float yoffset = g_mouseClickY - ypos; // reversed since y-coordinates go from bottom to top
-
-    if (g_mouseClickDown)
-    {
-        // todo more user interaction
         UI->setModelview(g_ModelViewMatrix);
         UI->setProjection(g_ProjectionMatrix);
         UI->grabPoint(g_mouseClickX, g_mouseClickY);
+    }
+    else if (!firstMouse && g_mouseClickDown)
+    {
+        // mouse move
+        const float xoffset = xpos - g_mouseClickX;
+        const float yoffset = g_mouseClickY - ypos; // reversed since y-coordinates go from bottom to top
         glm::vec3 ux(0, 1, 0);
         glm::vec3 uy(0, 0, -1);
         UI->movePoint(0.01f * (xoffset * ux + yoffset * uy));
+        g_mouseClickX = xpos;
+        g_mouseClickY = ypos;
     }
-    else
+    else if (!g_mouseClickDown)
     {
+        // mouse release
         UI->releasePoint();
+        firstMouse = true;
     }
-
-    g_mouseClickX = xpos;
-    g_mouseClickY = ypos;
 }
 
 static void processInput(GLFWwindow *window)

@@ -271,10 +271,15 @@ CgNode::CgNode(mass_spring_system *system, float *vbuff) : system(system), vbuff
 
 // point node
 CgPointNode::CgPointNode(mass_spring_system *system, float *vbuff) : CgNode(system, vbuff) {}
-bool CgPointNode::accept(CgNodeVisitor &visitor) { return visitor.visit(*this); }
+
+bool CgPointNode::accept(CgNodeVisitor &visitor)
+{
+    return visitor.visit(*this);
+}
 
 // spring node
 CgSpringNode::CgSpringNode(mass_spring_system *system, float *vbuff) : CgNode(system, vbuff) {}
+
 bool CgSpringNode::accept(CgNodeVisitor &visitor)
 {
     for (CgNode *child : children)
@@ -306,7 +311,12 @@ bool CgRootNode::accept(CgNodeVisitor &visitor)
 // point fix node
 CgPointFixNode::CgPointFixNode(mass_spring_system *system, float *vbuff)
     : CgPointNode(system, vbuff) {}
-bool CgPointFixNode::query(unsigned int i) const { return fix_map.find(3 * i) != fix_map.end(); }
+
+bool CgPointFixNode::query(unsigned int i) const
+{
+    return fix_map.find(3 * i) != fix_map.end();
+}
+
 void CgPointFixNode::satisfy()
 {
     for (auto fix : fix_map)
@@ -372,15 +382,27 @@ void CgSpringDeformationNode::satisfy()
         }
     }
 }
+
 void CgSpringDeformationNode::addSprings(std::vector<unsigned int> springs)
 {
     items.insert(springs.begin(), springs.end());
 }
 
 // sphere collision node
-CgSphereCollisionNode::CgSphereCollisionNode(mass_spring_system *system, float *vbuff,
-                                             float radius, Vector3f center) : CgPointNode(system, vbuff), radius(radius), center(center) {}
-bool CgSphereCollisionNode::query(unsigned int i) const { return false; }
+CgSphereCollisionNode::CgSphereCollisionNode(
+    mass_spring_system *system,
+    float *vbuff,
+    float radius,
+    Vector3f center)
+    : CgPointNode(system, vbuff),
+      radius(radius),
+      center(center) {}
+
+bool CgSphereCollisionNode::query(unsigned int i) const
+{
+    return false;
+}
+
 void CgSphereCollisionNode::satisfy()
 {
     for (int i = 0; i < system->n_points; i++)
@@ -406,8 +428,15 @@ void CgSphereCollisionNode::satisfy()
 }
 
 // node visitor
-bool CgNodeVisitor::visit(CgPointNode &node) { return true; }
-bool CgNodeVisitor::visit(CgSpringNode &node) { return true; }
+bool CgNodeVisitor::visit(CgPointNode &node)
+{
+    return true;
+}
+
+bool CgNodeVisitor::visit(CgSpringNode &node)
+{
+    return true;
+}
 
 // query fixed point visitor
 bool CgQueryFixedPointVisitor::visit(CgPointNode &node)
@@ -415,6 +444,7 @@ bool CgQueryFixedPointVisitor::visit(CgPointNode &node)
     queryResult = node.query(i);
     return !queryResult;
 }
+
 bool CgQueryFixedPointVisitor::queryPoint(CgNode &root, unsigned int i)
 {
     this->i = i;
